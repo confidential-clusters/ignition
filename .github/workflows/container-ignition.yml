@@ -1,0 +1,55 @@
+# Build ignition container images for f43 and c9s
+
+name: Build Ignition Container Images
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# avoid races when pushing containers built from main
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  build-container:
+    name: Build container image (${{ matrix.base-name }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - base-name: fedora
+            base-image: fedora:latest
+            image-suffix: -f43
+          - base-name: centos-stream-9
+            base-image: quay.io/centos/centos:stream9
+            image-suffix: -c9s
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          # fetch tags too
+          # https://github.com/actions/checkout/issues/290
+          fetch-depth: 0
+      - name: Fix actions/checkout synthetic tag
+        run: git fetch --tags --force
+      - name: Generate tags
+        id: tags
+        run: |
+          DATE=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          echo "tags=latest ${DATE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
+      - name: Build and push container
+        uses: coreos/actions-lib/build-container@main
+        with:
+          credentials: ${{ secrets.QUAY_AUTH }}
+          file: Containerfile.ignition
+          push: ${{ github.event_name == 'push' && github.repository_owner == 'trusted-execution-clusters' && format('quay.io/trusted-execution-clusters/ignition{0}', matrix.image-suffix) || '' }}
+          arches: amd64
+          build-args: BASE=${{ matrix.base-image }}
+          tags: ${{ steps.tags.outputs.tags }}

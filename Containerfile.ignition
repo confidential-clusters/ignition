@@ -1,0 +1,13 @@
+ARG BASE=fedora:f43
+FROM $BASE AS builder
+
+RUN dnf install -y golang git-core libblkid-devel make
+
+WORKDIR /usr/src/ignition
+COPY . .
+
+RUN ./build
+
+FROM scratch
+COPY --from=builder /usr/src/ignition/bin/amd64/ignition /usr/bin/ignition
+
